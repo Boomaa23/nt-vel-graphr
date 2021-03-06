@@ -2,14 +2,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 from networktables import NetworkTables
 
+wait_time = 0.1
+sec_lim = 4
 btn = None
 paused = False
+
 
 class NTData:
     def __init__(self, plot_line):
         self.plot_line = plot_line
         self.data_x = []
         self.data_y = []
+        self.accum = 0
 
 
 def nt_init():
@@ -37,6 +41,7 @@ def plot_init(vel_max, sec_max):
     plt.style.use('ggplot')
     plt.ion()
     fg, ax = plt.subplots(2, 2)
+    fg.canvas.set_window_title('CheeseWrangler Velocity Grapher')
     plt.tight_layout()
 
     ax[0, 0].set_title('vX')
@@ -82,7 +87,7 @@ def btn_callback(event):
 
 
 def setup_textbox(ax, text):
-    return ax.text(0.05, 0.95, text, transform=ax.transAxes, fontsize=12, verticalalignment='top')
+    return ax.text(0.05, 0.95, text, transform=ax.transAxes, fontsize=10, verticalalignment='top')
 
 
 def get_all_text_boxes(axs):
@@ -94,9 +99,15 @@ def get_all_text_boxes(axs):
     ]
 
 
+def trapezoid_integral(y_data):
+    accum = 0
+    for idx in range(len(y_data) - 1):
+        accum += (y_data[idx + 1] + y_data[idx]) / 2 * wait_time
+    return accum
+
+
 def main():
     shuffleboard = nt_init()
-    sec_lim = 4
     fig, axs = plot_init(sec_lim, 5)
     lines = line_init(axs)
     plt.show()
@@ -107,9 +118,8 @@ def main():
     global btn
     btn = p_btn
 
-    wait_time = 0.1
+    math_text = '$\\tau=$%s\n$\\alpha=$%s\n$\\int=$%s'
     time_elapsed = 0
-
     has_data = False
     ntd = []
     for line in lines:
@@ -131,9 +141,13 @@ def main():
 
             if not paused:
                 l2r = int(len(lines) / 2)
+                accum_min = int(max((time_elapsed - sec_lim) / wait_time, 0))
                 for idx in range(l2r):
-                    tbs[idx].set_text('%s\n%s' % (round(ntd[idx].data_y[-1], 2),
-                                                  round(ntd[idx + l2r].data_y[-1], 2)))
+                    accum = trapezoid_integral(ntd[idx + l2r].data_y[accum_min:-1]) - \
+                            trapezoid_integral(ntd[idx].data_y[accum_min:-1])
+                    tbs[idx].set_text(math_text % (round(ntd[idx].data_y[-1], 2),
+                                                   round(ntd[idx + l2r].data_y[-1], 2),
+                                                   round(accum, 2)))
                 for r in range(len(axs)):
                     for c in range(len(axs[r])):
                         axs[r][c].set_xlim([time_elapsed - sec_lim, time_elapsed + (sec_lim / 5)])
